@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Target, Settings, Briefcase, ExternalLink } from 'lucide-react';
 import { SettingsTab } from '../../src/components/SettingsTab';
+import { TrackerTab } from '../../src/components/TrackerTab';
 import type { LeadInSettings } from '../../src/types';
 import { loadAllSettings, saveAllSettings } from '../../src/lib/storage';
 
@@ -104,15 +105,10 @@ function App() {
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto px-5 pb-5 pt-1">
         {activeTab === 'tracker' ? (
-          <div className="h-full flex flex-col items-center justify-center text-center py-16">
-            <div className="w-12 h-12 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-center text-slate-400 mb-3">
-              <Briefcase className="w-6 h-6 stroke-[1.75]" />
-            </div>
-            <h3 className="text-xs font-semibold text-slate-700">No Job Selected</h3>
-            <p className="text-[11px] text-slate-400 mt-1 max-w-[240px] leading-relaxed">
-              Highlight job text on any webpage and click LeadIn to evaluate fit.
-            </p>
-          </div>
+          <TrackerTab 
+            settings={settings} 
+            onNavigateToSettings={() => setActiveTab('settings')} 
+          />
         ) : (
           <SettingsTab initialSettings={settings} onSave={handleSaveSettings} />
         )}

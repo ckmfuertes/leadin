@@ -292,10 +292,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ initialSettings, onSav
           type="button"
           disabled={!isFormValid || isSaving}
           onClick={handleSave}
-          className={`w-full py-3 px-4 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition duration-200 text-white shadow-md cursor-pointer ${
+          className={`w-full py-3 px-4 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition duration-150 text-white shadow-sm cursor-pointer ${
             isFormValid
-              ? 'bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-teal-500/20 active:scale-[0.98]'
-              : 'bg-gradient-to-r from-teal-500 to-emerald-500 opacity-40 cursor-not-allowed shadow-none'
+              ? 'bg-teal-600 hover:bg-teal-700 active:scale-[0.99]'
+              : 'bg-teal-600 opacity-40 cursor-not-allowed shadow-none'
           }`}
         >
           {isSaving ? (
