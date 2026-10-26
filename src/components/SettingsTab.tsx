@@ -1,36 +1,64 @@
-import React, { useState } from "react";
-import { Eye, EyeOff, Upload, Check, Loader2, X } from "lucide-react";
-import type { LeadInSettings, Currency, RatePeriod, WorkSetup } from "../types";
-import { extractTextFromPdf } from "../lib/pdf";
+import React, { useState, useEffect } from 'react';
+import { Eye, EyeOff, Upload, Check, Loader2, X } from 'lucide-react';
+import type { LeadInSettings, Currency, RatePeriod, WorkSetup } from '../types';
+import { extractTextFromPdf } from '../lib/pdf';
+import { DEFAULT_SETTINGS } from '../lib/storage';
 
 interface SettingsTabProps {
-  onSave?: (settings: LeadInSettings) => void;
+  initialSettings?: LeadInSettings | null;
+  onSave?: (settings: LeadInSettings) => Promise<void> | void;
 }
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
-  // Required fields with defaults
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [jobBoardUrl, setJobBoardUrl] = useState("");
-  const [resumeText, setResumeText] = useState("");
-  const [minRate, setMinRate] = useState("15000");
-  const [currency, setCurrency] = useState<Currency>("PHP");
-  const [ratePeriod, setRatePeriod] = useState<RatePeriod>("/ mo");
-  const [workSetup, setWorkSetup] = useState<WorkSetup>("Any");
-  const [customNotes, setCustomNotes] = useState("");
+export const SettingsTab: React.FC<SettingsTabProps> = ({ initialSettings, onSave }) => {
+  // Single source of truth for form data initialized with DEFAULT_SETTINGS
+  const [form, setForm] = useState<LeadInSettings>(initialSettings || DEFAULT_SETTINGS);
 
-  // UX State
+  // UI state
+  const [showApiKey, setShowApiKey] = useState(false);
   const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Sync whenever initialSettings loads from chrome.storage
+  useEffect(() => {
+    if (initialSettings) {
+      setForm(initialSettings);
+    }
+  }, [initialSettings]);
+
+  // Form field updater helpers
+  const updateField = <K extends keyof LeadInSettings>(key: K, value: LeadInSettings[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updatePreference = <K extends keyof LeadInSettings['preferences']>(
+    key: K,
+    value: LeadInSettings['preferences'][K]
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, [key]: value },
+    }));
+  };
+
+  // Compare against baseline (initialSettings or DEFAULT_SETTINGS)
+  const baseline = initialSettings || DEFAULT_SETTINGS;
+  const hasChanges =
+    form.webhookUrl.trim() !== baseline.webhookUrl.trim() ||
+    form.apiKey.trim() !== baseline.apiKey.trim() ||
+    (form.jobBoardUrl || '').trim() !== (baseline.jobBoardUrl || '').trim() ||
+    form.resumeText.trim() !== baseline.resumeText.trim() ||
+    form.preferences.minRate.trim() !== baseline.preferences.minRate.trim() ||
+    form.preferences.currency !== baseline.preferences.currency ||
+    form.preferences.ratePeriod !== baseline.preferences.ratePeriod ||
+    form.preferences.workSetup !== baseline.preferences.workSetup ||
+    form.preferences.customNotes.trim() !== baseline.preferences.customNotes.trim();
 
   // Validation
-  const isUrlValid =
-    webhookUrl.trim().startsWith("http://") || webhookUrl.trim().startsWith("https://");
-  const isResumeValid = resumeText.trim().length > 20;
-  const isRateValid = minRate.trim().length > 0 && Number(minRate) > 0;
-  const isFormValid = isUrlValid && isResumeValid && isRateValid;
+  const isUrlValid = form.webhookUrl.trim().startsWith('http://') || form.webhookUrl.trim().startsWith('https://');
+  const isResumeValid = form.resumeText.trim().length > 20;
+  const isRateValid = form.preferences.minRate.trim().length > 0 && Number(form.preferences.minRate) > 0;
+  const isFormValid = isUrlValid && isResumeValid && isRateValid && hasChanges;
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -42,39 +70,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
     try {
       const extracted = await extractTextFromPdf(file);
       if (extracted.trim()) {
-        setResumeText(extracted);
+        updateField('resumeText', extracted);
       }
     } catch (err) {
-      console.error("PDF extraction failed:", err);
+      console.error('PDF extraction failed:', err);
     } finally {
       setIsParsingPdf(false);
-      e.target.value = "";
+      e.target.value = '';
     }
   };
 
-  const handleSave = () => {
-    if (!isFormValid) return;
+  const handleSave = async () => {
+    if (!isFormValid || isSaving) return;
 
-    const settings: LeadInSettings = {
-      webhookUrl: webhookUrl.trim(),
-      apiKey: apiKey.trim(),
-      jobBoardUrl: jobBoardUrl.trim(),
-      resumeText: resumeText.trim(),
+    setIsSaving(true);
+    const cleanedSettings: LeadInSettings = {
+      webhookUrl: form.webhookUrl.trim(),
+      apiKey: form.apiKey.trim(),
+      jobBoardUrl: (form.jobBoardUrl || '').trim(),
+      resumeText: form.resumeText.trim(),
       preferences: {
-        minRate: minRate.trim(),
-        currency,
-        ratePeriod,
-        workSetup,
-        customNotes: customNotes.trim(),
+        minRate: form.preferences.minRate.trim(),
+        currency: form.preferences.currency,
+        ratePeriod: form.preferences.ratePeriod,
+        workSetup: form.preferences.workSetup,
+        customNotes: form.preferences.customNotes.trim(),
       },
     };
 
-    onSave?.(settings);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
+    try {
+      await onSave?.(cleanedSettings);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const wordCount = resumeText.trim() ? resumeText.trim().split(/\s+/).length : 0;
+  const wordCount = form.resumeText.trim() ? form.resumeText.trim().split(/\s+/).length : 0;
 
   return (
     <div className="space-y-3.5 text-slate-800">
@@ -87,8 +120,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
           <input
             type="url"
             placeholder="https://hook.us1.make.com/..."
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
+            value={form.webhookUrl}
+            onChange={(e) => updateField('webhookUrl', e.target.value)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
           />
         </div>
@@ -99,10 +132,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
           </label>
           <div className="relative">
             <input
-              type={showApiKey ? "text" : "password"}
-              placeholder="x-make-apikey header"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              type={showApiKey ? 'text' : 'password'}
+              placeholder="x-make-apikey header (optional)"
+              value={form.apiKey}
+              onChange={(e) => updateField('apiKey', e.target.value)}
               className="w-full pl-3 pr-9 py-2 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
             />
             <button
@@ -116,12 +149,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">Job Board URL</label>
+          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            Job Board URL
+          </label>
           <input
             type="url"
-            placeholder="https://notion.so/your-job-tracker-board"
-            value={jobBoardUrl}
-            onChange={(e) => setJobBoardUrl(e.target.value)}
+            placeholder="https://notion.so/your-job-tracker-board (optional)"
+            value={form.jobBoardUrl || ''}
+            onChange={(e) => updateField('jobBoardUrl', e.target.value)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition"
           />
         </div>
@@ -170,7 +205,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
               type="button"
               onClick={() => {
                 setPdfFileName(null);
-                setResumeText("");
+                updateField('resumeText', '');
               }}
               className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
             >
@@ -181,9 +216,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
 
         <textarea
           rows={5}
-          placeholder="Paste plain-text ATS-friendly resume or click Upload PDF above..."
-          value={resumeText}
-          onChange={(e) => setResumeText(e.target.value)}
+          placeholder="Paste plain-text resume or click Upload PDF above..."
+          value={form.resumeText}
+          onChange={(e) => updateField('resumeText', e.target.value)}
           className="w-full p-3 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 resize-none transition leading-relaxed"
         />
       </div>
@@ -197,21 +232,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
           <div className="flex rounded-xl border border-slate-200/70 bg-slate-50 focus-within:bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20 overflow-hidden transition">
             <input
               type="number"
-              value={minRate}
-              onChange={(e) => setMinRate(e.target.value)}
+              value={form.preferences.minRate}
+              onChange={(e) => updatePreference('minRate', e.target.value)}
               className="w-full px-3 py-2 text-xs text-slate-900 bg-transparent outline-none focus:outline-none"
             />
             <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as Currency)}
+              value={form.preferences.currency}
+              onChange={(e) => updatePreference('currency', e.target.value as Currency)}
               className="px-3 text-xs font-semibold bg-slate-100/80 border-l border-slate-200 text-slate-700 outline-none focus:outline-none cursor-pointer"
             >
               <option value="PHP">PHP (₱)</option>
               <option value="USD">USD ($)</option>
             </select>
             <select
-              value={ratePeriod}
-              onChange={(e) => setRatePeriod(e.target.value as RatePeriod)}
+              value={form.preferences.ratePeriod}
+              onChange={(e) => updatePreference('ratePeriod', e.target.value as RatePeriod)}
               className="px-3 text-xs font-semibold bg-slate-100/80 border-l border-slate-200 text-slate-700 outline-none focus:outline-none cursor-pointer"
             >
               <option value="/ mo">/ month</option>
@@ -226,8 +261,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
             Work Setup <span className="text-red-500">*</span>
           </label>
           <select
-            value={workSetup}
-            onChange={(e) => setWorkSetup(e.target.value as WorkSetup)}
+            value={form.preferences.workSetup}
+            onChange={(e) => updatePreference('workSetup', e.target.value as WorkSetup)}
             className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 cursor-pointer transition font-medium"
           >
             <option value="Remote">Remote</option>
@@ -244,33 +279,36 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ onSave }) => {
           <textarea
             rows={4}
             placeholder="e.g. Flag roles requiring weekend work or night shifts. Prioritize leadership opportunities and strong team culture."
-            value={customNotes}
-            onChange={(e) => setCustomNotes(e.target.value)}
+            value={form.preferences.customNotes}
+            onChange={(e) => updatePreference('customNotes', e.target.value)}
             className="w-full p-3 text-xs bg-slate-50 border border-slate-200/70 rounded-xl text-slate-900 placeholder:text-slate-400 outline-none focus:outline-none focus:bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 resize-none transition leading-relaxed"
           />
         </div>
       </div>
 
-      {/* 4. Action Save Button (Rounded, tactile pill like Peek) */}
+      {/* 4. Action Save Button */}
       <div className="pt-1">
         <button
           type="button"
-          disabled={!isFormValid}
+          disabled={!isFormValid || isSaving}
           onClick={handleSave}
           className={`w-full py-3 px-4 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition duration-200 text-white shadow-md cursor-pointer ${
-            savedSuccess
-              ? "bg-emerald-500 shadow-emerald-500/20"
-              : "bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-teal-500/20 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            isFormValid
+              ? 'bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-teal-500/20 active:scale-[0.98]'
+              : 'bg-gradient-to-r from-teal-500 to-emerald-500 opacity-40 cursor-not-allowed shadow-none'
           }`}
         >
-          {savedSuccess ? (
+          {isSaving ? (
             <>
-              <Check className="w-4 h-4 stroke-[3]" />
-              <span>Saved Settings</span>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Saving...</span>
             </>
+          ) : hasChanges ? (
+            <span>Save Settings</span>
           ) : (
             <>
-              <span>Save Settings</span>
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>Saved</span>
             </>
           )}
         </button>
