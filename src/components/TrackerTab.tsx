@@ -13,15 +13,22 @@ import {
   ArrowLeft,
   XCircle,
   CheckCircle2,
+  Plus,
 } from "lucide-react";
+import { browser } from "wxt/browser";
 import type { ExtractedJobData, AnalysisResponse } from "../types/tracker";
 import type { LeadInSettings } from "../types";
 import { extractActiveTabJobData } from "../lib/extractor";
-import { dispatchLeadAnalysis } from "../lib/api";
+import {
+  loadActiveAnalysis,
+  saveActiveAnalysis,
+  clearActiveAnalysis,
+  activeAnalysisStorage,
+} from "../lib/storage";
 
 interface TrackerTabProps {
   settings: LeadInSettings | null;
-  onNavigateToSettings?: () => void;
+  onNavigateToSettings?: (focusField?: string) => void;
 }
 
 export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSettings }) => {
@@ -32,7 +39,7 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Pull job data from the active tab when the component mounts
+  // Pull job data from the active tab
   const handleExtractFromTab = async () => {
     setIsExtracting(true);
     setErrorMessage(null);
@@ -47,11 +54,60 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
     }
   };
 
+  // Restore persisted analysis state across popup closes or in-flight requests
   useEffect(() => {
-    handleExtractFromTab();
+    async function restoreAnalysisState() {
+      try {
+        const active = await loadActiveAnalysis();
+        if (active.status === "result" && active.result) {
+          setResult(active.result);
+          if (active.jobData) setJobData(active.jobData);
+          setViewState("result");
+          setIsExtracting(false);
+          return;
+        }
+
+        if (active.status === "loading") {
+          // If still within 90-second timeout window, keep showing loading state
+          if (active.startedAt && Date.now() - active.startedAt < 90000) {
+            setViewState("loading");
+            if (active.jobData) setJobData(active.jobData);
+            setIsExtracting(false);
+            return;
+          } else {
+            await clearActiveAnalysis();
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load active analysis state:", err);
+      }
+
+      // Default: inspect current tab
+      handleExtractFromTab();
+    }
+
+    restoreAnalysisState();
+
+    // Watch for state changes from background worker in real-time
+    const unwatch = activeAnalysisStorage.watch((newVal) => {
+      if (!newVal) return;
+      if (newVal.status === "result" && newVal.result) {
+        setResult(newVal.result);
+        if (newVal.jobData) setJobData(newVal.jobData);
+        setViewState("result");
+        setErrorMessage(null);
+      } else if (newVal.status === "error") {
+        setErrorMessage(newVal.errorMessage || "Lead analysis failed.");
+        setViewState("preview");
+      }
+    });
+
+    return () => {
+      unwatch();
+    };
   }, []);
 
-  // Handle the lead analysis process
+  // Handle the lead analysis process via background service worker
   const handleStartAnalysis = async () => {
     if (!jobData || !jobData.rawText.trim()) return;
 
@@ -63,28 +119,66 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
     setViewState("loading");
     setErrorMessage(null);
 
+    // Save loading state to storage first so closing the popup remembers in-flight status
+    await saveActiveAnalysis({
+      status: "loading",
+      startedAt: Date.now(),
+      jobData,
+      result: null,
+      errorMessage: null,
+    });
+
     try {
-      const response = await dispatchLeadAnalysis(jobData, settings);
-      setResult(response);
-      setViewState("result");
+      // Dispatch through background service worker to guarantee completion even if popup unmounts
+      const response = await browser.runtime.sendMessage({
+        type: "START_ANALYSIS",
+        jobData,
+        settings,
+      });
+
+      if (response && response.success && response.result) {
+        setResult(response.result);
+        setViewState("result");
+      } else if (response && response.error) {
+        setErrorMessage(response.error);
+        setViewState("preview");
+      }
     } catch (err: any) {
-      console.error("Dispatch failed:", err);
-      setErrorMessage(err?.message || "Failed to dispatch lead to webhook.");
-      setViewState("preview");
+      console.error("Dispatch message failed:", err);
+      // Wait a moment and check storage before giving up
+      const current = await loadActiveAnalysis();
+      if (current.status === "result" && current.result) {
+        setResult(current.result);
+        setViewState("result");
+      } else if (current.status === "error") {
+        setErrorMessage(current.errorMessage || "Analysis failed.");
+        setViewState("preview");
+      }
     }
   };
 
   // Reset the tracker to allow analyzing another job
-  const handleReset = () => {
+  const handleReset = async () => {
+    await clearActiveAnalysis();
     setViewState("preview");
     setResult(null);
     setErrorMessage(null);
     handleExtractFromTab();
   };
 
+  // Notion board redirect handler
+  const handleNotionBoardClick = () => {
+    if (settings?.jobBoardUrl && settings.jobBoardUrl.trim()) {
+      window.open(settings.jobBoardUrl.trim(), "_blank");
+    } else {
+      onNavigateToSettings?.("jobBoardUrl");
+    }
+  };
+
   const isShort = (jobData?.characterCount ?? 0) < 100;
   const isLoading = viewState === "loading";
   const isSettingsMissing = !settings?.webhookUrl || !settings?.resumeText;
+  const hasJobBoardUrl = Boolean(settings?.jobBoardUrl && settings.jobBoardUrl.trim() !== "");
 
   return (
     <div className="space-y-3.5 text-slate-800">
@@ -183,8 +277,9 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
             </div>
           </div>
 
-          {/* Analyze Button */}
-          <div className="pt-1">
+          {/* Action Buttons */}
+          <div className="space-y-2 pt-0.5">
+            {/* Primary Analyze Button */}
             <button
               type="button"
               disabled={isLoading || !jobData?.rawText || isSettingsMissing}
@@ -199,7 +294,27 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Analyze & Track</span>
+                  <span>Analyze & Track Lead</span>
+                </>
+              )}
+            </button>
+
+            {/* Secondary Notion Board Redirect Button */}
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={handleNotionBoardClick}
+              className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition duration-150 text-slate-700 bg-slate-100/90 hover:bg-slate-200/80 active:scale-[0.99] border border-slate-200/60 shadow-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {hasJobBoardUrl ? (
+                <>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>View Notion Board</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Add Notion Board</span>
                 </>
               )}
             </button>
@@ -259,7 +374,7 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
             </div>
           </div>
 
-          {/* Matched Skills   */}
+          {/* Matched Skills */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3.5">
             <div>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-teal-700 mb-2">

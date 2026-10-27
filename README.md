@@ -32,6 +32,8 @@ Most job application trackers force you into their proprietary web app, store yo
 - **Fit Score Dial:** High-contrast SVG gauge with color thresholds (Emerald for 80%+, Teal for 60-79%, Amber for 40-59%, Rose for <40%).
 - **Interactive Chip States:** Matched skills (soft teal) and missing skills (soft rose) chips with clean pill badges.
 - **Resilient Webhook Client:** 45-second timeout, `x-make-apikey` header support, and developer-friendly error messaging for default `"Accepted"` Make.com responses.
+- **Background Execution & State Persistence:** Analyzing is dispatched through a Chrome MV3 background service worker so closing the popup never aborts in-flight requests. Results persist across popup closures until explicitly resetting.
+- **Smart Notion Quick Navigation:** Direct contextual shortcuts to view your Notion board or jump straight to configuring it in Settings.
 
 ---
 
@@ -45,14 +47,20 @@ LeadIn acts as the lightweight browser client. Your automation pipeline (Make.co
        ▼
  [ LeadIn Popup ] ── (Locally parses Resume PDF)
        │
-       ▼ (POST Outbound Payload)
+       ▼ (Background Message)
+ [ Background Worker ] ── (POST Outbound Payload)
+       │
+       ▼
 [ Your Webhook (Make.com / n8n / Serverless) ]
        │
        ├─► Send to LLM (Gemini / Claude / OpenAI) for gap analysis
        ├─► Insert row into your Notion / Airtable board
        │
        ▼ (JSON Inbound Response)
- [ LeadIn Popup ] ──► Displays Fit Score, Skills Chips & Notion Link
+ [ Background Worker ] ── (Persists into local storage)
+       │
+       ▼
+  [ LeadIn Popup ] ──► Displays Fit Score, Skills Chips & Notion Link
 ```
 
 ### Outbound Webhook Payload (LeadIn ➔ Your Endpoint)
@@ -61,18 +69,27 @@ When you click **Analyze & Track**, LeadIn sends a `POST` request with `Content-
 
 ```json
 {
-  "sourceUrl": "https://www.linkedin.com/jobs/view/1234567890",
-  "domain": "linkedin.com",
-  "pageTitle": "Senior Frontend Engineer - Acme Corp",
-  "jobDescription": "We are seeking a Senior Frontend Engineer proficient in React, TypeScript...",
+  "timestamp": "2026-10-27T13:40:00.000Z",
+  "metadata": {
+    "sourceUrl": "https://www.linkedin.com/jobs/view/1234567890",
+    "pageTitle": "Senior Frontend Engineer - Acme Corp",
+    "domain": "linkedin.com"
+  },
+  "jobPosting": {
+    "rawText": "We are seeking a Senior Frontend Engineer proficient in React, TypeScript...",
+    "characterCount": 4250,
+    "wordCount": 612
+  },
   "candidate": {
     "resumeText": "Experienced engineer with 5+ years of building web applications...",
-    "expectedSalary": 120000,
-    "currency": "USD",
-    "ratePeriod": "/ yr",
-    "workArrangement": "Remote"
-  },
-  "timestamp": "2026-10-27T13:40:00.000Z"
+    "preferences": {
+      "minRate": "15000",
+      "currency": "PHP",
+      "ratePeriod": "/ mo",
+      "workSetup": "Remote",
+      "customNotes": "Prioritize roles with modern React and TypeScript stacks."
+    }
+  }
 }
 ```
 
@@ -84,13 +101,18 @@ Your webhook must respond with HTTP 200 and a JSON body matching this shape:
 
 ```json
 {
+  "success": true,
   "fitScore": 88,
-  "role": "Senior Frontend Engineer",
-  "company": "Acme Corp",
-  "summary": "Strong fit with hands-on React and TypeScript experience. Gap in GraphQL and Kubernetes.",
-  "matchedSkills": ["React", "TypeScript", "Tailwind CSS", "REST APIs"],
-  "missingSkills": ["GraphQL", "Kubernetes", "Docker"],
-  "notionPageUrl": "https://www.notion.so/acme-corp-lead-abc123xyz"
+  "summary": {
+    "company": "Acme Corp",
+    "role": "Senior Frontend Engineer",
+    "workSetup": "Remote",
+    "extractedSalary": "$120,000 / yr",
+    "stackMatch": ["React", "TypeScript", "Tailwind CSS", "REST APIs"],
+    "missingSkills": ["GraphQL", "Kubernetes", "Docker"]
+  },
+  "gapAnalysis": "Strong match with frontend core requirements. Some experience gaps in backend containerization.",
+  "notionUrl": "https://www.notion.so/acme-corp-lead-abc123xyz"
 }
 ```
 
@@ -155,6 +177,7 @@ npm run zip
 ```
 leadin/
 ├── entrypoints/
+│   ├── background.ts        # MV3 background service worker for reliable async dispatch
 │   └── popup/               # Extension popup entry point
 │       ├── App.tsx          # Main tab layout & state management
 │       ├── main.tsx         # React root mount
