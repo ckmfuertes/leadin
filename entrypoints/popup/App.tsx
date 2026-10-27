@@ -10,6 +10,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'tracker' | 'settings'>('tracker');
   const [settings, setSettings] = useState<LeadInSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [settingsFocusField, setSettingsFocusField] = useState<string | null>(null);
 
   // Load persisted settings on mount
   useEffect(() => {
@@ -57,18 +58,7 @@ function App() {
             <div className="flex items-center gap-1.5">
               <h1 className="text-sm font-bold tracking-tight text-slate-900 leading-none">
                 LeadIn
-              </h1>
-              {settings?.jobBoardUrl && (
-                <a
-                  href={settings.jobBoardUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open Job Board"
-                  className="text-slate-400 hover:text-teal-600 transition"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
+              </h1> 
             </div>
             <p className="text-[11px] text-slate-400 font-normal mt-0.5">
               AI Job Tracker
@@ -108,10 +98,20 @@ function App() {
         {activeTab === 'tracker' ? (
           <TrackerTab 
             settings={settings} 
-            onNavigateToSettings={() => setActiveTab('settings')} 
+            onNavigateToSettings={(focusField?: string) => {
+              setSettingsFocusField(focusField || null);
+              setActiveTab('settings');
+            }} 
           />
         ) : (
-          <SettingsTab initialSettings={settings} onSave={handleSaveSettings} />
+          <SettingsTab 
+            initialSettings={settings} 
+            focusField={settingsFocusField}
+            onSave={(newSettings) => {
+              handleSaveSettings(newSettings);
+              setSettingsFocusField(null);
+            }} 
+          />
         )}
       </main>
     </div>
