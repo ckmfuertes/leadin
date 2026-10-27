@@ -161,7 +161,7 @@ export const TrackerTab: React.FC<TrackerTabProps> = ({ settings, onNavigateToSe
             <div className="relative">
               <textarea
                 disabled={isLoading}
-                rows={11}
+                rows={14}
                 value={jobData?.rawText || ""}
                 onChange={(e) => {
                   const newText = e.target.value;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, Settings, Briefcase, ExternalLink } from 'lucide-react';
+import { Settings, Briefcase, ExternalLink } from 'lucide-react';
 import { SettingsTab } from '../../src/components/SettingsTab';
 import { TrackerTab } from '../../src/components/TrackerTab';
 import type { LeadInSettings } from '../../src/types';
@@ -41,20 +41,18 @@ function App() {
   // Render loading state
   if (isLoading) {
     return (
-      <div className="w-[430px] h-[550px] bg-[#f8fafc] flex items-center justify-center text-slate-400 text-xs font-medium">
+      <div className="w-[460px] h-[580px] bg-[#f8fafc] flex items-center justify-center text-slate-400 text-xs font-medium">
         Loading LeadIn...
       </div>
     );
   }
 
   return (
-    <div className="w-[430px] h-[550px] bg-[#f8fafc] text-slate-800 flex flex-col font-sans select-none antialiased">
+    <div className="w-[460px] h-[580px] bg-[#f8fafc] text-slate-800 flex flex-col font-sans select-none antialiased">
       {/* Top Header */}
       <header className="px-5 pt-4 pb-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-teal-500/20">
-            <Target className="w-4 h-4 stroke-[2.5]" />
-          </div>
+          <img src="/icon.svg" alt="LeadIn Logo" className="w-8 h-8 rounded-xl shadow-md shadow-teal-500/20 object-contain" />
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="text-sm font-bold tracking-tight text-slate-900 leading-none">
