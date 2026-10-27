@@ -2,11 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-}
-
 html, body {
   margin: 0;
   padding: 0;
@@ -17,7 +12,6 @@ html, body {
   overflow: hidden;
 }
 
-/* 6px smooth, rounded scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

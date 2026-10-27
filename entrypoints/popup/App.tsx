@@ -6,6 +6,7 @@ import type { LeadInSettings } from '../../src/types';
 import { loadAllSettings, saveAllSettings } from '../../src/lib/storage';
 
 function App() {
+  // Set up states
   const [activeTab, setActiveTab] = useState<'tracker' | 'settings'>('tracker');
   const [settings, setSettings] = useState<LeadInSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,11 +32,13 @@ function App() {
     init();
   }, []);
 
+  // Save settings handler
   const handleSaveSettings = async (newSettings: LeadInSettings) => {
     await saveAllSettings(newSettings);
     setSettings(newSettings);
   };
 
+  // Render loading state
   if (isLoading) {
     return (
       <div className="w-[430px] h-[550px] bg-[#f8fafc] flex items-center justify-center text-slate-400 text-xs font-medium">

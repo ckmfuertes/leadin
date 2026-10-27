@@ -1,9 +1,18 @@
 {
-  "name": "wxt-react-starter",
-  "description": "manifest.json description",
-  "private": true,
-  "version": "0.0.0",
+  "name": "leadin",
+  "version": "1.0.0",
+  "description": "Open-source BYOE Chrome extension to ingest job postings, analyze skill gaps, and track applications.",
   "type": "module",
+  "author": "Cherwen Kirk Fuertes",
+  "license": "MIT",
+  "homepage": "https://github.com/ckmfuertes/leadin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ckmfuertes/leadin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ckmfuertes/leadin/issues"
+  },
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
